@@ -1,0 +1,19 @@
+[package]
+name = "wbu-trainer"
+version = "1.2.1"
+edition = "2024"
+license = "MIT"
+description = "Trainer for Wakeboarding Unleashed (PC): live cheats, model swaps and a save editor"
+
+[dependencies]
+eframe = { version = "0.36.2", default-features = false, features = ["glow", "default_fonts", "persistence"] }
+rfd = "0.17.2"
+serde = { version = "1.0.229", features = ["derive"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Memory", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
