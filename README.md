@@ -39,7 +39,8 @@ Applied to the running game; toggle them in the window or with the numeric keypa
 - **Your boat can look like any model** too: the gondola, a jet ski, an orca…
 - **Big heads**, rider size (for non-rider looks), boat size, and a turn control to face models the right way.
 - **The cut Secret level**: the game ships a finished level called *Secret* that no menu can reach.
-  Pick a level for it to replace and it loads in that level's place (applies when the game starts).
+  Pick a level for it to replace and it loads in that level's place. Switch it on or off any time; it applies
+  the next time you enter the level.
 
 Changes show up in the game immediately. This needs the small in-game helper (`dinput8.dll`), installed with one click.
 
@@ -54,7 +55,7 @@ Edits `Game\Save\*.CAR` while the game is closed, with a backup before every wri
 The helper fixes the game's *"realloc relocated memory block!"* crash when changing levels or quitting on modern Windows.
 
 ## Download and install
-1. Download `wbu-trainer-1.2.1.zip` from the [Releases](../../releases) page and extract it anywhere.
+1. Download `wbu-trainer-1.2.2.zip` from the [Releases](../../releases) page and extract it anywhere.
 2. Run `wbu-trainer.exe`. It finds the default install
    (`C:\Program Files (x86)\Aspyr\Wakeboarding Unleashed\Game`); otherwise browse to the folder with `WBU.EXE`.
 3. For the Models tab, open it and click **Install** to copy `dinput8.dll` into the game folder

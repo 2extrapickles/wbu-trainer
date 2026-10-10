@@ -1,4 +1,4 @@
-WBU Trainer 1.2.1 - for Wakeboarding Unleashed (PC, Aspyr 2003)
+WBU Trainer 1.2.2 - for Wakeboarding Unleashed (PC, Aspyr 2003)
 =================================================================
 
 A small trainer with three tabs:
@@ -25,7 +25,7 @@ A small trainer with three tabs:
                 - your boat can look like any model too (gondola, jet ski, orca...)
                 - big heads, rider size (for non-rider looks), boat size, turn
                 - the cut "Secret" level, loaded in place of a level you pick
-                  (applies when the game starts)
+                  (applies the next time you enter that level)
   Save editor   Career saves (game closed). A backup is made before every write
                 (Game\Save\wbu-trainer-backup\).
                 - Unlock everything in one click (what the game's own Ultimate cheat does,

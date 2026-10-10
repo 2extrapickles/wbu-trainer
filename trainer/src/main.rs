@@ -395,11 +395,11 @@ impl App {
                 });
                 ui.weak("with Secret");
             });
-            ui.small("Applies when the game starts (restart it if it is running). The replaced level's challenges and \
+            ui.small("Applies the next time you enter that level, even while the game is running. The replaced level's challenges and \
                       people still use their own positions, so free ride works best.");
         });
         if !self.ini.redirects.is_empty() {
-            ui.weak(format!("{} folder redirect line(s) in wbu-trainer.ini are kept (applied at game start).", self.ini.redirects.len()));
+            ui.weak(format!("{} folder redirect line(s) in wbu-trainer.ini are kept.", self.ini.redirects.len()));
         }
         ui.horizontal(|ui| {
             if ui.button("Reset all").clicked() {

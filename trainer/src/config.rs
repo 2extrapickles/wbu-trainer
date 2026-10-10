@@ -9,7 +9,7 @@ pub struct TrainerIni {
     pub rider_turn: u32, // quarter turns
     pub boat: String,
     pub boat_turn: u32,
-    pub redirects: Vec<String>, // hand-written [redirect] lines (applied at game start), kept as is
+    pub redirects: Vec<String>, // hand-written [redirect] lines, kept as is
     /// Level folder whose files are replaced by the cut Secret level ("" = off), e.g. "Florida".
     pub secret_in: String,
 }
@@ -85,7 +85,7 @@ impl TrainerIni {
         out += &format!("[look]\nrider={}\nrider_size={:.2}\nrider_turn={}\n", self.rider, self.rider_size, self.rider_turn);
         out += &format!("boat={}\nboat_turn={}\n", self.boat, self.boat_turn);
         if !self.redirects.is_empty() || !self.secret_in.is_empty() {
-            out += "\n; Folder redirects, applied when the game starts\n[redirect]\n";
+            out += "\n; Folder redirects, applied the next time the game opens those files\n[redirect]\n";
             if !self.secret_in.is_empty() {
                 out += &format!("data\\levels\\{} = data\\levels\\Secret\n", self.secret_in);
             }

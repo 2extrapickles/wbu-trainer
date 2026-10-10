@@ -69,10 +69,40 @@ fn exe_matches() -> bool {
 
 static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// Folder redirects from wbu-trainer.ini, e.g. `data\boats\Malibu = data\boats\Calabria`.
+/// Folder redirects from wbu-trainer.ini, e.g. `data\levels\Florida = data\levels\Secret`.
 /// Keys are normalised (lower case, no spaces before separators) because the game pads folder
-/// names with a trailing space ("data\players\shaun \player.bin").
-static REDIRECTS: OnceLock<Vec<(String, String)>> = OnceLock::new();
+/// names with a trailing space ("data\players\shaun \player.bin"). Re-read whenever the ini
+/// changes, so a redirect applies to the next time the game opens those files.
+struct Redirects {
+    rules: Vec<(String, String)>,
+    stamp: Option<std::time::SystemTime>,
+    next_check: Option<Instant>,
+}
+static REDIRECTS: Mutex<Redirects> = Mutex::new(Redirects { rules: Vec::new(), stamp: None, next_check: None });
+
+fn refresh_redirects(r: &mut Redirects) {
+    let now = Instant::now();
+    if r.next_check.is_some_and(|t| now < t) {
+        return;
+    }
+    r.next_check = Some(now + std::time::Duration::from_millis(250));
+    let Some(dir) = DIR.get() else { return };
+    let stamp = std::fs::metadata(dir.join("wbu-trainer.ini")).and_then(|m| m.modified()).ok();
+    if stamp == r.stamp {
+        return;
+    }
+    r.stamp = stamp;
+    let rules = load_redirects(dir);
+    if rules != r.rules {
+        if rules.is_empty() {
+            log("redirects: none");
+        }
+        for (from, to) in &rules {
+            log(format!("redirect {from} -> {to}"));
+        }
+        r.rules = rules;
+    }
+}
 
 pub(crate) fn normalise(path: &str) -> String {
     let mut out = path.replace('/', "\\").to_lowercase();
@@ -104,7 +134,9 @@ fn load_redirects(dir: &std::path::Path) -> Vec<(String, String)> {
 /// Apply the first matching folder redirect; returns the new path (NUL-terminated) if any.
 fn redirect(path: &str) -> Option<Vec<u8>> {
     let norm = normalise(path);
-    for (from, to) in REDIRECTS.get()? {
+    let mut r = REDIRECTS.lock().ok()?;
+    refresh_redirects(&mut r);
+    for (from, to) in &r.rules {
         if let Some(rest) = norm.strip_prefix(from.as_str())
             && (rest.is_empty() || rest.starts_with('\\'))
         {
@@ -130,7 +162,9 @@ unsafe extern "system" fn hook_create_file(
         let path = unsafe { CStr::from_ptr(name.cast()) }.to_string_lossy().into_owned();
         redirected = redirect(&path);
         let mut seen = SEEN.lock().unwrap();
-        if !seen.contains(&path) {
+        // Every open is logged once; a level's geometry every time, to see when levels really load.
+        let level_geometry = normalise(&path).ends_with("\\track.nsr") && !path.contains("PC\\");
+        if level_geometry || !seen.contains(&path) {
             match &redirected {
                 Some(r) => log(format!("open {path} -> {}", String::from_utf8_lossy(&r[..r.len() - 1]))),
                 None => log(format!("open {path}")),
@@ -194,11 +228,9 @@ pub unsafe extern "system" fn DllMain(module: HMODULE, reason: u32, _reserved: *
             log("WBU.EXE does not match the expected build; helper disabled");
             return 1;
         }
-        let rules = load_redirects(&dir);
-        for (from, to) in &rules {
-            log(format!("redirect {from} -> {to}"));
+        if let Ok(mut r) = REDIRECTS.lock() {
+            refresh_redirects(&mut r);
         }
-        let _ = REDIRECTS.set(rules);
         let prologue = std::slice::from_raw_parts(SHRINK_LOADED_FILE as *const u8, SHRINK_PROLOGUE.len());
         if prologue == SHRINK_PROLOGUE {
             write_protected(SHRINK_LOADED_FILE, 0xC3u8); // ret (cdecl: the caller pops the arguments)
