@@ -27,4 +27,7 @@ Copy-Item 'LICENSE' (Join-Path $stage 'LICENSE.txt') -Force
 
 $zip = "$stage.zip"
 Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
-Get-Item $zip | Select-Object Name, Length
+# Checksum file for the built-in updater: upload it to the release next to the zip.
+$hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+Set-Content -Path "$zip.sha256" -Value "$hash  $(Split-Path $zip -Leaf)" -Encoding ascii -NoNewline
+Get-Item $zip, "$zip.sha256" | Select-Object Name, Length

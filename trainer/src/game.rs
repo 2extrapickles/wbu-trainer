@@ -230,6 +230,20 @@ impl Drop for Process {
     }
 }
 
+/// Close the game immediately (used when the helper must be replaced and the user agreed).
+pub fn terminate_game() -> Result<(), String> {
+    let pid = find_pid().ok_or("the game is not running")?;
+    unsafe {
+        let h = OpenProcess(windows_sys::Win32::System::Threading::PROCESS_TERMINATE, 0, pid);
+        if h.is_null() {
+            return Err(format!("no permission ({})", std::io::Error::last_os_error()));
+        }
+        let ok = windows_sys::Win32::System::Threading::TerminateProcess(h, 0) != 0;
+        CloseHandle(h);
+        if ok { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
+    }
+}
+
 pub fn find_pid() -> Option<u32> {
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);

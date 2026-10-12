@@ -1,4 +1,4 @@
-WBU Trainer 1.2.2 - for Wakeboarding Unleashed (PC, Aspyr 2003)
+WBU Trainer 1.3.0 - for Wakeboarding Unleashed (PC, Aspyr 2003)
 =================================================================
 
 A small trainer with three tabs:
@@ -42,6 +42,10 @@ Install
    (Only needed for the Models tab. Live cheats and the save editor work without it.
    Install it before starting the game; after that, changes apply instantly.)
 4. Start the game (from the trainer or as usual). Keep the trainer open for live cheats.
+
+Updates: the trainer checks GitHub once a day (or press "Check for updates") and can update
+itself in one click. Downloads are verified against a published SHA-256 checksum. The helper
+(dinput8.dll) is kept up to date automatically while the game is closed.
 
 Uninstall: delete dinput8.dll, wbu-trainer.ini and wbu-trainer.log from the game folder.
 

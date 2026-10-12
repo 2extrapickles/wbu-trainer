@@ -54,8 +54,15 @@ Edits `Game\Save\*.CAR` while the game is closed, with a backup before every wri
 ### Also fixed
 The helper fixes the game's *"realloc relocated memory block!"* crash when changing levels or quitting on modern Windows.
 
+### Updates
+The trainer checks this repository's latest release once a day (or when you press **Check for updates**) and can
+update itself in one click: it shows the release notes, downloads the zip, verifies it against the SHA-256 checksum
+published with the release, replaces itself and restarts. Only full releases are offered, never pre-releases.
+The helper is built into the trainer, so an outdated `dinput8.dll` in the game folder is refreshed automatically while
+the game is closed; if the game is open, the trainer asks whether to close it now or wait.
+
 ## Download and install
-1. Download `wbu-trainer-1.2.2.zip` from the [Releases](../../releases) page and extract it anywhere.
+1. Download `wbu-trainer-1.3.0.zip` from the [Releases](../../releases) page and extract it anywhere.
 2. Run `wbu-trainer.exe`. It finds the default install
    (`C:\Program Files (x86)\Aspyr\Wakeboarding Unleashed\Game`); otherwise browse to the folder with `WBU.EXE`.
 3. For the Models tab, open it and click **Install** to copy `dinput8.dll` into the game folder
@@ -85,7 +92,14 @@ rustup target add i686-pc-windows-msvc
 Build everything and create the release zip:
 
 ```powershell
-./package.ps1        # -> dist\wbu-trainer-<version>.zip (wbu-trainer.exe, dinput8.dll, README, LICENSE)
+./package.ps1        # -> dist\wbu-trainer-<version>.zip and its .zip.sha256
+```
+
+The helper is built first and embedded in the trainer exe. To publish a release the updater will accept, upload
+**both** files from `dist\`, the zip and its `.sha256`, to a GitHub release tagged `v<version>`:
+
+```powershell
+gh release create v<version> dist\wbu-trainer-<version>.zip dist\wbu-trainer-<version>.zip.sha256 --title "WBU Trainer <version>" --notes "..."
 ```
 
 Or build the parts separately:

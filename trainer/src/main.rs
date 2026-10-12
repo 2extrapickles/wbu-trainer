@@ -3,7 +3,9 @@
 //! career save editor for Wakeboarding Unleashed (PC).
 mod config;
 mod game;
+mod net;
 mod save;
+mod update;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -27,8 +29,19 @@ fn main() -> eframe::Result {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
 struct Settings {
     game_dir: String,
+    last_update_check: u64, // unix seconds of the last automatic update check
+}
+
+/// Keeps the installed helper in step with the one embedded in this trainer.
+struct HelperSync {
+    state: update::HelperState,
+    next_check: std::time::Instant,
+    wait_for_game: bool, // the user chose to wait until the game closes
+    prompt: bool,        // "game is open" dialog visible
+    confirm_close: bool, // second step of "Close the game"
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -48,6 +61,8 @@ struct App {
     saves: Vec<PathBuf>,
     save: Option<save::Save>,
     message: (String, bool), // (text, is error)
+    updater: update::Shared,
+    helper: HelperSync,
 }
 
 /// A full-width framed group.
@@ -109,7 +124,24 @@ impl App {
             saves: Vec::new(),
             save: None,
             message: (String::new(), false),
+            updater: update::Shared::default(),
+            helper: HelperSync {
+                state: update::HelperState::Missing,
+                next_check: std::time::Instant::now(),
+                wait_for_game: false,
+                prompt: false,
+                confirm_close: false,
+            },
         };
+        update::cleanup_old();
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(v) = args.iter().position(|a| a == "--updated-to").and_then(|i| args.get(i + 1)) {
+            app.say(format!("Updated to version {v}."), false);
+        }
+        if update::due(app.settings.last_update_check) {
+            app.settings.last_update_check = update::now();
+            update::check(&app.updater, &cc.egui_ctx, false);
+        }
         app.refresh_saves();
         app.models = config::models(&app.game_dir());
         app.save = app.saves.first().and_then(|p| save::Save::load(p).ok());
@@ -282,24 +314,168 @@ impl App {
     }
 
     fn helper_status(&mut self, ui: &mut egui::Ui) {
-        let installed = std::fs::read(self.game_dir().join("dinput8.dll"))
-            .is_ok_and(|d| d.windows(13).any(|w| w == b"wbu-trainer.i"));
-        ui.horizontal(|ui| {
-            if installed {
+        ui.horizontal(|ui| match self.helper.state {
+            update::HelperState::Current | update::HelperState::Unknown => {
                 ui.colored_label(OK, "Helper (dinput8.dll) installed");
-            } else {
+            }
+            update::HelperState::Outdated => {
+                ui.colored_label(Color32::from_rgb(230, 190, 90), "Helper (dinput8.dll) out of date: it is updated when the game is closed");
+            }
+            update::HelperState::Missing => {
                 ui.colored_label(BAD, "Helper (dinput8.dll) not installed: model changes need it");
-                let bundled = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("dinput8.dll")));
-                if let Some(src) = bundled.filter(|p| p.is_file())
-                    && ui.button("Install").clicked()
-                {
-                    match std::fs::copy(&src, self.game_dir().join("dinput8.dll")) {
-                        Ok(_) => self.say("Helper installed.", false),
+                if !update::HELPER.is_empty() && ui.button("Install").clicked() {
+                    match update::install_helper(&self.game_dir()) {
+                        Ok(()) => self.say("Helper installed. Start (or restart) the game to use it.", false),
                         Err(e) => self.say(format!("Could not install the helper: {e}"), true),
                     }
+                    self.helper.next_check = std::time::Instant::now();
                 }
             }
         });
+    }
+
+    /// Every couple of seconds: is the installed helper current? Update it when the game is closed;
+    /// if the game is open, ask (close it now, or wait).
+    fn sync_helper(&mut self, ctx: &egui::Context) {
+        let now = std::time::Instant::now();
+        if now >= self.helper.next_check {
+            self.helper.next_check = now + std::time::Duration::from_secs(2);
+            self.helper.state = update::helper_state(&self.game_dir());
+            if self.helper.state == update::HelperState::Outdated {
+                if game::find_pid().is_none() {
+                    match update::install_helper(&self.game_dir()) {
+                        Ok(()) => {
+                            self.say("Helper (dinput8.dll) updated to match this trainer.", false);
+                            self.helper.state = update::HelperState::Current;
+                        }
+                        Err(e) => self.say(format!("Could not update the helper: {e}"), true),
+                    }
+                    self.helper.prompt = false;
+                    self.helper.wait_for_game = false;
+                } else if !self.helper.wait_for_game {
+                    self.helper.prompt = true;
+                }
+            }
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs(2));
+        if !self.helper.prompt {
+            return;
+        }
+        egui::Window::new("Helper update")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label("The helper (dinput8.dll) needs updating, but the game is open.");
+                ui.label("It can only be replaced while the game is closed.");
+                ui.add_space(6.0);
+                if self.helper.confirm_close {
+                    ui.colored_label(BAD, "Close the game now? Anything not saved in the game will be lost.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Close it now").clicked() {
+                            match game::terminate_game() {
+                                Ok(()) => self.say("Game closed; updating the helper…", false),
+                                Err(e) => self.say(format!("Could not close the game: {e}"), true),
+                            }
+                            self.helper.prompt = false;
+                            self.helper.confirm_close = false;
+                            self.helper.wait_for_game = true;
+                            self.helper.next_check = std::time::Instant::now() + std::time::Duration::from_secs(1);
+                        }
+                        if ui.button("Back").clicked() {
+                            self.helper.confirm_close = false;
+                        }
+                    });
+                } else {
+                    ui.horizontal(|ui| {
+                        if ui.button("Close the game").clicked() {
+                            self.helper.confirm_close = true;
+                        }
+                        if ui.button("Wait until I close it").clicked() {
+                            self.helper.prompt = false;
+                            self.helper.wait_for_game = true;
+                            self.say("The helper will be updated as soon as the game closes.", false);
+                        }
+                    });
+                }
+            });
+    }
+
+    /// Update banner + release notes window.
+    fn update_ui(&mut self, ui: &mut egui::Ui) {
+        let status = self.updater.lock().unwrap().status.clone();
+        let dismissed = self.updater.lock().unwrap().dismissed.clone();
+        let ctx = ui.ctx().clone();
+        let banner = |ui: &mut egui::Ui, add: &mut dyn FnMut(&mut egui::Ui)| {
+            egui::Panel::top("update").show(ui, |ui| {
+                ui.horizontal(|ui| add(ui));
+            });
+        };
+        match status {
+            update::Status::Available(r) if dismissed.as_deref() != Some(r.version.as_str()) => {
+                banner(ui, &mut |ui| {
+                    ui.colored_label(OK, format!("Version {} is available (you have {}).", r.version, update::VERSION));
+                    if ui.button("What's new / Update").clicked() {
+                        self.updater.lock().unwrap().show_notes = true;
+                    }
+                    if ui.button("Later").clicked() {
+                        self.updater.lock().unwrap().dismissed = Some(r.version.clone());
+                    }
+                });
+                let mut open = self.updater.lock().unwrap().show_notes;
+                if open {
+                    egui::Window::new(format!("What's new in {}", r.version))
+                        .open(&mut open)
+                        .collapsible(false)
+                        .default_width(440.0)
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .show(&ctx, |ui| {
+                            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                                ui.label(if r.notes.is_empty() { "No release notes." } else { r.notes.as_str() });
+                            });
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                if ui.button(RichText::new("Update now").strong()).clicked() {
+                                    update::install(&self.updater, &ctx, r.clone());
+                                }
+                                if !r.page.is_empty() && ui.link("Release page").clicked() {
+                                    ctx.open_url(egui::OpenUrl::new_tab(&r.page));
+                                }
+                            });
+                            ui.small("The download is checked against its published SHA-256 checksum before anything is replaced.");
+                        });
+                    self.updater.lock().unwrap().show_notes = open;
+                }
+            }
+            update::Status::Downloading(r, done, total) => banner(ui, &mut |ui| {
+                ui.label(format!("Downloading {}…", r.version));
+                let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+                ui.add(egui::ProgressBar::new(frac).desired_width(220.0).show_percentage());
+            }),
+            update::Status::Installing => banner(ui, &mut |ui| {
+                ui.spinner();
+                ui.label("Installing the update…");
+            }),
+            update::Status::Restarting => {
+                banner(ui, &mut |ui| {
+                    ui.label("Restarting into the new version…");
+                });
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            update::Status::Error(e) => banner(ui, &mut |ui| {
+                ui.colored_label(BAD, e.clone());
+                if ui.small_button("OK").clicked() {
+                    self.updater.lock().unwrap().status = update::Status::Idle;
+                }
+            }),
+            update::Status::UpToDate if self.updater.lock().unwrap().show_notes => banner(ui, &mut |ui| {
+                ui.label(format!("You have the latest version ({}).", update::VERSION));
+                if ui.small_button("OK").clicked() {
+                    self.updater.lock().unwrap().show_notes = false;
+                }
+            }),
+            _ => {}
+        }
     }
 
     /// A "looks like" picker: (normal) or any model, grouped by folder. Returns true on change.
@@ -564,8 +740,19 @@ impl eframe::App for App {
                 ui.selectable_value(&mut self.tab, Tab::Live, "Live cheats");
                 ui.selectable_value(&mut self.tab, Tab::Models, "Models");
                 ui.selectable_value(&mut self.tab, Tab::Save, "Save editor");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let checking = matches!(self.updater.lock().unwrap().status, update::Status::Checking);
+                    if ui.add_enabled(!checking, egui::Button::new(if checking { "Checking…" } else { "Check for updates" }).small()).clicked() {
+                        self.settings.last_update_check = update::now();
+                        self.updater.lock().unwrap().show_notes = true; // also shows "up to date"
+                        update::check(&self.updater, ui.ctx(), true);
+                    }
+                    ui.weak(format!("v{}", update::VERSION));
+                });
             });
         });
+        self.update_ui(ui);
+        self.sync_helper(&ui.ctx().clone());
         egui::Panel::bottom("status").show(ui, |ui| {
             let (text, err) = &self.message;
             ui.colored_label(if *err { BAD } else { ui.visuals().weak_text_color() }, if text.is_empty() { " " } else { text });
